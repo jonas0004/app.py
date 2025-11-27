@@ -126,8 +126,8 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
     "_abs_dist": abs(raw_dist_pct) 
 })
 
-        except Exception:
-            continue
+    except Exception:
+        continue
             
     status_text.empty()
     progress_bar.empty()
