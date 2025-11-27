@@ -13,10 +13,11 @@ st.set_page_config(
 # 2. Funktion zum Laden der Daten (mit Cache für Speed)
 @st.cache_data
 def get_sp500_tickers():
-    # Holt echte Ticker von Wikipedia
-    url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-    table = pd.read_html(url)
-    return table[0]['Symbol'].tolist()
+    # Eine stabile, gepflegte Liste von einem Data-Provider auf GitHub
+    url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
+    df = pd.read_csv(url)
+    return df['Symbol'].tolist()
+
 
 # 3. Screener-Logik
 def run_screener(tickers, rsi_threshold, ema_dist_pct):
