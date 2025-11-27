@@ -2,110 +2,144 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import pandas_ta as ta
+import requests
 
-# 1. Seiten-Konfiguration (Titel, Layout, Icon)
+# 1. Seiten-Konfiguration
 st.set_page_config(
-    page_title="S&P 500 Screener",
-    page_icon="📈",
-    layout="wide"  # Nutzt den ganzen Bildschirm
+    page_title="S&P 500 Screener Pro",
+    page_icon="🚀",
+    layout="wide"
 )
 
-# 2. Funktion zum Laden der Daten (mit Cache für Speed)
+# 2. Daten laden (Von GitHub statt Wikipedia -> Viel stabiler)
 @st.cache_data
 def get_sp500_tickers():
-    # Eine stabile, gepflegte Liste von einem Data-Provider auf GitHub
-    url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
-    df = pd.read_csv(url)
-    return df['Symbol'].tolist()
+    try:
+        url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
+        df = pd.read_csv(url)
+        return df['Symbol'].tolist()
+    except Exception as e:
+        st.error(f"Fehler beim Laden der Ticker-Liste: {e}")
+        return []
 
-
-# 3. Screener-Logik
+# 3. Der eigentliche Screener
 def run_screener(tickers, rsi_threshold, ema_dist_pct):
     candidates = []
+    
+    # Progress Bar Setup
     progress_bar = st.progress(0)
     status_text = st.empty()
+    total_tickers = len(tickers)
     
-    # Wir nehmen zum Testen erstmal nur die ersten 50 Ticker, um Zeit zu sparen (für alle: tickers[:])
-    for i, t in enumerate(tickers[:]):
+    # Loop durch ALLE Ticker
+    for i, t in enumerate(tickers):
         try:
-            status_text.text(f"Analysiere {t}...")
-            progress_bar.progress((i + 1) / 50)
+            # Update Progress (nur alle 5 Ticker, spart Rechenzeit im UI)
+            if i % 5 == 0:
+                progress_bar.progress((i + 1) / total_tickers)
+                status_text.text(f"Analysiere {i+1} von {total_tickers}: {t}...")
             
-            # Daten laden (letzte 6 Monate reichen für EMA50)
-            df = yf.download(t, period="6mo", progress=False)
+            # Daten laden (letzte 6 Monate)
+            # threads=False verhindert manchmal API-Probleme bei Massenabfragen
+            df = yf.download(t, period="6mo", progress=False, threads=False)
             
+            # Check ob genug Daten da sind
             if len(df) < 50: continue
             
-            # Indikatoren berechnen
-            df['RSI'] = ta.rsi(df['Close'], length=14)
-            df['EMA50'] = ta.ema(df['Close'], length=50)
+            # --- INDIKATOREN BERECHNEN ---
             
-            # Volumen-Trend (Durchschnitt letzte 3 Tage vs. davor)
-            vol_recent = df['Volume'].iloc[-3:].mean()
-            vol_prev = df['Volume'].iloc[-6:-3].mean()
+            # 1. RSI (14)
+            # Wir nutzen 'Close' - bei Multi-Index Dataframes von yfinance sicherstellen, dass es 1D ist
+            if isinstance(df.columns, pd.MultiIndex):
+                close_series = df['Close'].iloc[:, 0]
+                volume_series = df['Volume'].iloc[:, 0]
+            else:
+                close_series = df['Close']
+                volume_series = df['Volume']
+
+            rsi_val = ta.rsi(close_series, length=14)
+            if rsi_val is None: continue # Falls Berechnung fehlschlägt
             
-            latest = df.iloc[-1]
+            # 2. EMA (50)
+            ema_val = ta.ema(close_series, length=50)
+            if ema_val is None: continue
+
+            # 3. Volumen Trend (Avg 3 Tage vs Avg davor)
+            vol_recent = volume_series.iloc[-3:].mean()
+            vol_prev = volume_series.iloc[-6:-3].mean()
             
-            # Kriterien prüfen
-            cond_rsi = latest['RSI'] < rsi_threshold
-            cond_ema = abs(latest['Close'] - latest['EMA50']) / latest['EMA50'] < (ema_dist_pct / 100)
-            cond_vol = vol_recent > vol_prev # Volumen steigt an
+            # Letzte Werte holen
+            current_close = close_series.iloc[-1]
+            current_rsi = rsi_val.iloc[-1]
+            current_ema = ema_val.iloc[-1]
+            
+            # --- FILTER LOGIK ---
+            
+            # Kriterium A: RSI im Keller?
+            cond_rsi = current_rsi < rsi_threshold
+            
+            # Kriterium B: Preis nah am 50er EMA?
+            # Berechnung: Wie viel % ist der Preis vom EMA entfernt?
+            dist_pct = abs(current_close - current_ema) / current_ema * 100
+            cond_ema = dist_pct < ema_dist_pct
+            
+            # Kriterium C: Volumen steigt?
+            cond_vol = vol_recent > vol_prev
             
             if cond_rsi and cond_ema and cond_vol:
                 candidates.append({
                     "Ticker": t,
-                    "Kurs ($)": round(latest['Close'], 2),
-                    "RSI": round(latest['RSI'], 2),
-                    "Abstand EMA50 (%)": round(((latest['Close'] - latest['EMA50']) / latest['EMA50']) * 100, 2)
+                    "Kurs ($)": round(current_close, 2),
+                    "RSI": round(current_rsi, 2),
+                    "Abstand EMA50 (%)": round(dist_pct, 2),
+                    "Volumen-Trend": "Steigend 📈"
                 })
+                
         except Exception as e:
+            # Fehler bei einzelner Aktie ignorieren wir, damit der Scan weiterläuft
             continue
             
+    # Aufräumen
     status_text.empty()
     progress_bar.empty()
+    
     return pd.DataFrame(candidates)
 
-# --- FRONTEND AUFBAU ---
+# --- FRONTEND ---
 
-# Sidebar für Einstellungen
 with st.sidebar:
-    st.header("⚙️ Einstellungen")
-    st.write("Passe deine Strategie an:")
+    st.header("⚙️ Scanner Einstellungen")
     
-    rsi_limit = st.slider("RSI Limit (Überverkauft)", 10, 50, 30)
-    ema_tolerance = st.slider("Max. Abstand zu EMA50 (%)", 1.0, 10.0, 2.0)
-    
-    start_btn = st.button("🔍 Markt scannen", type="primary")
+    rsi_limit = st.slider("RSI Limit (Maximal)", 10, 50, 30, help="Alles unter diesem Wert gilt als überverkauft.")
+    ema_tolerance = st.slider("Max. Abstand zu EMA50 (%)", 0.5, 5.0, 2.0, step=0.1, help="Wie nah muss der Kurs am 50-Tage-Durchschnitt sein?")
     
     st.markdown("---")
-    st.info("Dieses Tool scannt den S&P 500 nach deiner Strategie.")
+    start_btn = st.button("🚀 Scan Starten", type="primary")
+    st.caption("Hinweis: Der Scan von 500 Aktien kann 2-4 Minuten dauern.")
 
-# Hauptbereich
-st.title("📈 Pro Stock Screener")
-st.markdown(f"**Strategie:** RSI < {rsi_limit} • Nähe EMA50 (< {ema_tolerance}%) • Steigendes Volumen")
+st.title("📈 S&P 500 Opportunity Screener")
+st.markdown(f"**Aktuelle Strategie:** Suche Aktien mit RSI < **{rsi_limit}**, die weniger als **{ema_tolerance}%** vom 50er EMA entfernt sind und **steigendes Volumen** zeigen.")
 
 if start_btn:
-    with st.spinner('Lade Marktdaten...'):
-        tickers = get_sp500_tickers()
-        results = run_screener(tickers, rsi_limit, ema_tolerance)
+    tickers = get_sp500_tickers()
     
-    if not results.empty:
-        # Metriken oben anzeigen
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Gefundene Aktien", len(results))
-        col2.metric("Niedrigster RSI", results['RSI'].min())
-        col3.metric("Bester Einstieg", results.sort_values('RSI').iloc[0]['Ticker'])
-        
-        st.success(f"{len(results)} Kaufkandidaten gefunden!")
-        
-        # Interaktive Tabelle
-        st.dataframe(
-            results.style.background_gradient(subset=['RSI'], cmap='RdYlGn_r'),
-            use_container_width=True,
-            hide_index=True
-        )
+    if not tickers:
+        st.error("Konnte keine Ticker laden. Prüfe deine Internetverbindung.")
     else:
-        st.warning("Keine Aktien gefunden, die diesen Kriterien entsprechen. Versuch, die Toleranz zu erhöhen.")
+        with st.spinner(f'Scanne {len(tickers)} Aktien im S&P 500... Bitte warten...'):
+            results = run_screener(tickers, rsi_limit, ema_tolerance)
+        
+        if not results.empty:
+            st.success(f"Fertig! {len(results)} Treffer gefunden.")
+            
+            # Ergebnisse Sortieren nach RSI (am stärksten überverkauft zuerst)
+            results = results.sort_values(by="RSI", ascending=True)
+            
+            st.dataframe(
+                results.style.background_gradient(subset=['RSI'], cmap='RdYlGn_r'),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.warning("Keine Treffer mit diesen strengen Kriterien. Versuch mal, den RSI auf 40 zu erhöhen oder den EMA-Abstand zu vergrößern.")
 
-else:
-    st.write("👈 Klicke links auf **'Markt scannen'**, um zu starten.")
