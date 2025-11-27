@@ -163,6 +163,9 @@ if start_btn:
         
         if not results.empty:
             st.success(f"{len(results)} Treffer gefunden!")
+            # Sortiert die Liste alphabetisch nach dem Ticker-Namen
+            results = results.sort_values(by="Ticker", ascending=True)
+
             st.dataframe(results, use_container_width=True, hide_index=True)
         else:
             st.warning("Keine Aktien gefunden.")
