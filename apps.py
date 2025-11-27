@@ -26,8 +26,7 @@ def run_screener(tickers, rsi_threshold, ema_dist_pct):
     status_text = st.empty()
     
     # Wir nehmen zum Testen erstmal nur die ersten 50 Ticker, um Zeit zu sparen (für alle: tickers[:])
-    # In der Praxis: entferne das [:50]
-    for i, t in enumerate(tickers[:50]):
+    for i, t in enumerate(tickers):
         try:
             status_text.text(f"Analysiere {t}...")
             progress_bar.progress((i + 1) / 50)
