@@ -117,7 +117,7 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
                         c_ema = ema_series.iloc[-1]
                         dist_pct = abs(final_close - c_ema) / c_ema * 100
                 
-               candidates.append({
+    candidates.append({
     "Ticker": t,
     "Kurs ($)": round(final_close, 2),
     "RSI": round(current_rsi, 2),
