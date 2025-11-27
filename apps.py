@@ -66,21 +66,31 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
                     match_rsi = False
             
             # 2. EMA CHECK
+            raw_dist_pct = 0.0 # Standardwert initialisieren
+            
             if use_ema:
                 ema_series = ta.ema(close, length=50)
                 if ema_series is None: continue
+                
                 current_ema = ema_series.iloc[-1]
                 current_close = close.iloc[-1]
                 
-            # Wir merken uns den "echten" Abstand mit Vorzeichen (+/-)
-            raw_dist_pct = (current_close - current_ema) / current_ema * 100
+                # Wir merken uns den "echten" Abstand mit Vorzeichen (+/-)
+                raw_dist_pct = (current_close - current_ema) / current_ema * 100
+                
+                # Für den Filter nutzen wir den absoluten Betrag
+                abs_dist_pct = abs(raw_dist_pct)
+                
+                if abs_dist_pct > ema_tol:
+                    match_ema = False
+            else:
+                # Wenn EMA-Filter aus ist, berechnen wir es trotzdem für die Anzeige (optional)
+                ema_series = ta.ema(close, length=50)
+                if ema_series is not None:
+                    c_ema = ema_series.iloc[-1]
+                    c_close = close.iloc[-1]
+                    raw_dist_pct = (c_close - c_ema) / c_ema * 100
 
-            # Für den Filter nutzen wir aber den absoluten Betrag (Nähe egal ob drüber oder drunter)
-            abs_dist_pct = abs(raw_dist_pct)
-
-            if use_ema:
-            if abs_dist_pct > ema_tol:
-             match_ema = False
 
             
             # 3. VOLUME CHECK
