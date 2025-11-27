@@ -18,7 +18,7 @@ Original file is located at
 # 
 # # 1. Seiten-Konfiguration (Titel, Layout, Icon)
 # st.set_page_config(
-#     page_title="S&P 500 Screener",
+   page_title="S&P 500 Screener",
 #     page_icon="📈",
 #     layout="wide"  # Nutzt den ganzen Bildschirm
 # )
