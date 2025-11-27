@@ -174,5 +174,5 @@ if not results.empty:
         use_container_width=True,
         hide_index=True
     )
-    else:
-         st.warning("Keine Aktien gefunden.")
+else:
+     st.warning("Keine Aktien gefunden.")
