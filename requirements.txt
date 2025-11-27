@@ -3,3 +3,5 @@ yfinance
 pandas
 pandas_ta
 lxml
+requests
+matplotlib
