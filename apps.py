@@ -72,9 +72,16 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
                 current_ema = ema_series.iloc[-1]
                 current_close = close.iloc[-1]
                 
-                dist_pct = abs(current_close - current_ema) / current_ema * 100
-                if dist_pct > ema_tol:
-                    match_ema = False
+            # Wir merken uns den "echten" Abstand mit Vorzeichen (+/-)
+            raw_dist_pct = (current_close - current_ema) / current_ema * 100
+
+            # Für den Filter nutzen wir aber den absoluten Betrag (Nähe egal ob drüber oder drunter)
+            abs_dist_pct = abs(raw_dist_pct)
+
+            if use_ema:
+            if abs_dist_pct > ema_tol:
+             match_ema = False
+
             
             # 3. VOLUME CHECK
             if use_vol:
@@ -100,12 +107,14 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
                         c_ema = ema_series.iloc[-1]
                         dist_pct = abs(final_close - c_ema) / c_ema * 100
                 
-                candidates.append({
-                    "Ticker": t,
-                    "Kurs ($)": round(final_close, 2),
-                    "RSI": round(current_rsi, 2),
-                    "Abstand EMA50 (%)": round(dist_pct, 2),
-                })
+               candidates.append({
+    "Ticker": t,
+    "Kurs ($)": round(final_close, 2),
+    "RSI": round(current_rsi, 2),
+    "Abstand EMA50 (%)": round(raw_dist_pct, 2), # Hier jetzt mit +/-
+    # Wir speichern den Absolutwert versteckt für die Sortierung
+    "_abs_dist": abs(raw_dist_pct) 
+})
 
         except Exception:
             continue
@@ -161,11 +170,26 @@ if start_btn:
         with st.spinner('Scanne Markt...'):
             results = run_screener(tickers, use_rsi, rsi_limit, use_ema, ema_tolerance, use_vol)
         
-        if not results.empty:
-            st.success(f"{len(results)} Treffer gefunden!")
-            # Sortiert die Liste alphabetisch nach dem Ticker-Namen
-            results = results.sort_values(by="Ticker", ascending=True)
+if not results.empty:
+    st.success(f"{len(results)} Treffer gefunden!")
+    
+    # 1. Sortieren nach der absoluten Nähe zum EMA (die Spalte _abs_dist haben wir extra dafür angelegt)
+    results = results.sort_values(by="_abs_dist", ascending=True)
+    
+    # 2. Die Hilfsspalte für die Anzeige entfernen (braucht der User nicht sehen)
+    display_df = results.drop(columns=["_abs_dist"])
+    
+    # 3. Style definieren: Minus-Werte in Rot, Plus-Werte in Grün
+    def color_ema_dist(val):
+        color = '#ff4b4b' if val < 0 else '#3dd56d' # Rot bei negativ, Grün bei positiv
+        return f'color: {color}'
 
-            st.dataframe(results, use_container_width=True, hide_index=True)
+    st.dataframe(
+        display_df.style
+        .map(color_ema_dist, subset=['Abstand EMA50 (%)']) # Färbt nur die EMA Spalte
+        .format({"Kurs ($)": "{:.2f}", "RSI": "{:.2f}", "Abstand EMA50 (%)": "{:+.2f}%"}), # Zeigt immer Vorzeichen an (+/-)
+        use_container_width=True,
+        hide_index=True
+    )
         else:
             st.warning("Keine Aktien gefunden.")
