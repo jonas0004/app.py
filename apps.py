@@ -40,7 +40,7 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
             df = yf.download(t, period="6mo", progress=False, threads=False)
             if len(df) < 50: continue
             
-            # Handling MultiIndex (passiert oft bei yfinance mass downloads)
+            # Handling MultiIndex
             if isinstance(df.columns, pd.MultiIndex):
                 close = df['Close'].iloc[:, 0]
                 volume = df['Volume'].iloc[:, 0]
@@ -53,46 +53,33 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
             match_ema = True
             match_vol = True
             
-            # Werte für Anzeige
+            # Werte für Anzeige initialisieren
             current_rsi = 0.0
-            dist_pct = 0.0
+            raw_dist_pct = 0.0 # Abstand mit Vorzeichen
             
             # 1. RSI CHECK
-            if use_rsi:
-                rsi_series = ta.rsi(close, length=14)
-                if rsi_series is None: continue
+            rsi_series = ta.rsi(close, length=14)
+            if rsi_series is not None:
                 current_rsi = rsi_series.iloc[-1]
-                if current_rsi > rsi_thresh:
+                if use_rsi and current_rsi > rsi_thresh:
                     match_rsi = False
-            
+            else:
+                match_rsi = False # Ohne Daten kein Match
+
             # 2. EMA CHECK
-            raw_dist_pct = 0.0 # Standardwert initialisieren
-            
-            if use_ema:
-                ema_series = ta.ema(close, length=50)
-                if ema_series is None: continue
-                
+            ema_series = ta.ema(close, length=50)
+            if ema_series is not None:
                 current_ema = ema_series.iloc[-1]
                 current_close = close.iloc[-1]
                 
-                # Wir merken uns den "echten" Abstand mit Vorzeichen (+/-)
+                # Berechnung immer durchführen für Anzeige
                 raw_dist_pct = (current_close - current_ema) / current_ema * 100
                 
-                # Für den Filter nutzen wir den absoluten Betrag
-                abs_dist_pct = abs(raw_dist_pct)
-                
-                if abs_dist_pct > ema_tol:
+                if use_ema and abs(raw_dist_pct) > ema_tol:
                     match_ema = False
             else:
-                # Wenn EMA-Filter aus ist, berechnen wir es trotzdem für die Anzeige (optional)
-                ema_series = ta.ema(close, length=50)
-                if ema_series is not None:
-                    c_ema = ema_series.iloc[-1]
-                    c_close = close.iloc[-1]
-                    raw_dist_pct = (c_close - c_ema) / c_ema * 100
+                match_ema = False
 
-
-            
             # 3. VOLUME CHECK
             if use_vol:
                 vol_recent = volume.iloc[-3:].mean()
@@ -102,32 +89,18 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
             
             # Wenn ALLE aktiven Filter passen -> hinzufügen
             if match_rsi and match_ema and match_vol:
-                # Werte berechnen falls sie oben nicht berechnet wurden (weil Filter aus war)
                 final_close = close.iloc[-1]
                 
-                # RSI berechnen für Anzeige, auch wenn Filter aus ist
-                if not use_rsi:
-                    rsi_series = ta.rsi(close, length=14)
-                    current_rsi = rsi_series.iloc[-1] if rsi_series is not None else 0
-                    
-                # EMA Abstand berechnen für Anzeige, auch wenn Filter aus ist
-                if not use_ema:
-                    ema_series = ta.ema(close, length=50)
-                    if ema_series is not None:
-                        c_ema = ema_series.iloc[-1]
-                        dist_pct = abs(final_close - c_ema) / c_ema * 100
-                
-    candidates.append({
-    "Ticker": t,
-    "Kurs ($)": round(final_close, 2),
-    "RSI": round(current_rsi, 2),
-    "Abstand EMA50 (%)": round(raw_dist_pct, 2), # Hier jetzt mit +/-
-    # Wir speichern den Absolutwert versteckt für die Sortierung
-    "_abs_dist": abs(raw_dist_pct) 
-})
+                candidates.append({
+                    "Ticker": t,
+                    "Kurs ($)": round(final_close, 2),
+                    "RSI": round(current_rsi, 2),
+                    "Abstand EMA50 (%)": round(raw_dist_pct, 2),
+                    "_abs_dist": abs(raw_dist_pct) # Versteckt für Sortierung
+                })
 
-    except Exception:
-        continue
+        except Exception:
+            continue
             
     status_text.empty()
     progress_bar.empty()
