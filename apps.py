@@ -40,23 +40,25 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
             df = yf.download(t, period="6mo", progress=False, threads=False)
             if len(df) < 50: continue
             
-            # Handling MultiIndex
+            # Handling MultiIndex (wichtig für Chart & Berechnung!)
             if isinstance(df.columns, pd.MultiIndex):
-                close = df['Close'].iloc[:, 0]
-                volume = df['Volume'].iloc[:, 0]
-            else:
-                close = df['Close']
-                volume = df['Volume']
+                df.columns = df.columns.get_level_values(0)
+            
+            close = df['Close']
+            volume = df['Volume']
 
             # --- PRÜFUNGEN ---
             match_rsi = True
             match_ema = True
             match_vol = True
             
-            # Werte für Anzeige initialisieren
+            # Werte initialisieren
             current_rsi = 0.0
-            raw_dist_pct = 0.0 # Abstand mit Vorzeichen
+            raw_dist_pct = 0.0  # Das ist der Wert mit +/- (für Anzeige)
+            abs_dist_pct = 0.0  # Das ist der positive Wert (für Filter)
             
+            final_close = close.iloc[-1]
+
             # 1. RSI CHECK
             rsi_series = ta.rsi(close, length=14)
             if rsi_series is not None:
@@ -64,18 +66,21 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
                 if use_rsi and current_rsi > rsi_thresh:
                     match_rsi = False
             else:
-                match_rsi = False # Ohne Daten kein Match
+                match_rsi = False
 
             # 2. EMA CHECK
             ema_series = ta.ema(close, length=50)
             if ema_series is not None:
                 current_ema = ema_series.iloc[-1]
-                current_close = close.iloc[-1]
                 
-                # Berechnung immer durchführen für Anzeige
-                raw_dist_pct = (current_close - current_ema) / current_ema * 100
+                # Berechnung: (Kurs - EMA) / EMA * 100
+                # Ergibt z.B. -1.5 (drunter) oder +0.5 (drüber)
+                raw_dist_pct = (final_close - current_ema) / current_ema * 100
                 
-                if use_ema and abs(raw_dist_pct) > ema_tol:
+                # Für den Filter ist uns egal, ob drüber oder drunter -> Absolutwert
+                abs_dist_pct = abs(raw_dist_pct)
+                
+                if use_ema and abs_dist_pct > ema_tol:
                     match_ema = False
             else:
                 match_ema = False
@@ -89,14 +94,12 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
             
             # Wenn ALLE aktiven Filter passen -> hinzufügen
             if match_rsi and match_ema and match_vol:
-                final_close = close.iloc[-1]
-                
                 candidates.append({
                     "Ticker": t,
                     "Kurs ($)": round(final_close, 2),
                     "RSI": round(current_rsi, 2),
-                    "Abstand EMA50 (%)": round(raw_dist_pct, 2),
-                    "_abs_dist": abs(raw_dist_pct) # Versteckt für Sortierung
+                    "Abstand EMA50 (%)": raw_dist_pct, # Hier den +/- Wert speichern!
+                    "_abs_dist": abs_dist_pct # Versteckter Wert für Sortierung
                 })
 
         except Exception:
@@ -105,6 +108,7 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
     status_text.empty()
     progress_bar.empty()
     return pd.DataFrame(candidates)
+
 
 # --- FRONTEND: ZWEIGETEILTES LAYOUT ---
 
@@ -137,10 +141,30 @@ with left_col:
             st.session_state['scan_results'] = run_screener(tickers, use_rsi, rsi_limit, use_ema, ema_tol, use_vol)
 
     # Ergebnisse anzeigen (falls vorhanden)
-    if 'scan_results' in st.session_state and not st.session_state['scan_results'].empty:
+       if 'scan_results' in st.session_state and not st.session_state['scan_results'].empty:
         results = st.session_state['scan_results']
         st.success(f"{len(results)} Treffer.")
         
+        # Erst nach absoluter Nähe sortieren
+        results = results.sort_values(by="_abs_dist", ascending=True)
+        
+        # Styling Funktion definieren
+        def color_ema_dist(val):
+            color = '#ff4b4b' if val < 0 else '#3dd56d' # Rot bei Minus, Grün bei Plus
+            return f'color: {color}'
+
+        # Tabelle anzeigen
+        event = st.dataframe(
+            results.drop(columns=["_abs_dist"]) # Versteckte Spalte rauswerfen
+                   .style
+                   .map(color_ema_dist, subset=['Abstand EMA50 (%)']) # Farbe anwenden
+                   .format({"Kurs ($)": "{:.2f}", "RSI": "{:.2f}", "Abstand EMA50 (%)": "{:+.2f}%"}), # Formatierung
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row"
+        )
+
         # Interaktive Tabelle mit Auswahl-Funktion
         # selection_mode='single-row' erlaubt das Anklicken einer Zeile
         event = st.dataframe(
