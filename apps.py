@@ -106,73 +106,97 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
     progress_bar.empty()
     return pd.DataFrame(candidates)
 
-# --- FRONTEND ---
+# --- FRONTEND: ZWEIGETEILTES LAYOUT ---
 
-with st.sidebar:
-    st.header("⚙️ Filter Einstellungen")
-    
-    # RSI Filter
-    st.subheader("1. RSI Filter")
-    use_rsi = st.checkbox("RSI Filter aktivieren", value=True)
-    rsi_limit = st.slider("RSI Limit", 10, 80, 30, disabled=not use_rsi)
-    
-    st.divider()
-    
-    # EMA Filter
-    st.subheader("2. EMA Filter")
-    use_ema = st.checkbox("EMA 50 Nähe aktivieren", value=True)
-    ema_tolerance = st.slider("Max. Abstand (%)", 0.5, 10.0, 2.0, step=0.5, disabled=not use_ema)
-    
-    st.divider()
-    
-    # Volumen Filter
-    st.subheader("3. Volumen Filter")
-    use_vol = st.checkbox("Steigendes Volumen", value=True)
-    
-    st.divider()
-    
-    start_btn = st.button("🚀 Scan Starten", type="primary")
+st.set_page_config(layout="wide", page_title="S&P 500 Screener & Chart", page_icon="📈")
 
-# Hauptbereich
-st.title("🎛️ S&P 500 Custom Screener")
+st.title("🎯 S&P 500 Analyse-Cockpit")
 
-# Anzeige der aktiven Strategie
-active_filters = []
-if use_rsi: active_filters.append(f"RSI < {rsi_limit}")
-if use_ema: active_filters.append(f"EMA-Nähe < {ema_tolerance}%")
-if use_vol: active_filters.append("Steigendes Volumen")
+# Layout: Zwei Spalten (Links: Screener / Rechts: Chart)
+left_col, right_col = st.columns([1, 1], gap="large")
 
-if not active_filters:
-    st.warning("⚠️ Achtung: Keine Filter ausgewählt. Das wird ALLE 500 Aktien anzeigen.")
-else:
-    st.markdown(f"**Aktive Strategie:** {' • '.join(active_filters)}")
+# --- LINKE SPALTE: SCREENER ---
+with left_col:
+    st.subheader("1. Aktiensuche")
+    
+    # Filter im Expander (Platzsparend)
+    with st.expander("⚙️ Filter Einstellungen", expanded=False):
+        f_col1, f_col2 = st.columns(2)
+        with f_col1:
+            use_rsi = st.checkbox("RSI Filter", value=True)
+            rsi_limit = st.slider("Max RSI", 10, 80, 30)
+            use_vol = st.checkbox("Volumen ↑", value=True)
+        with f_col2:
+            use_ema = st.checkbox("EMA Filter", value=True)
+            ema_tol = st.slider("EMA tol (%)", 0.5, 10.0, 2.0)
 
-if start_btn:
-    tickers = get_sp500_tickers()
-    if tickers:
-        with st.spinner('Scanne Markt...'):
-            results = run_screener(tickers, use_rsi, rsi_limit, use_ema, ema_tolerance, use_vol)
+    if st.button("🚀 Scan Starten", use_container_width=True):
+        # Wir speichern das Ergebnis im Session State, damit es beim Klick nicht verschwindet
+        tickers = get_sp500_tickers()
+        with st.spinner('Scanne...'):
+            st.session_state['scan_results'] = run_screener(tickers, use_rsi, rsi_limit, use_ema, ema_tol, use_vol)
+
+    # Ergebnisse anzeigen (falls vorhanden)
+    if 'scan_results' in st.session_state and not st.session_state['scan_results'].empty:
+        results = st.session_state['scan_results']
+        st.success(f"{len(results)} Treffer.")
         
-if not results.empty:
-    st.success(f"{len(results)} Treffer gefunden!")
-    
-    # 1. Sortieren nach der absoluten Nähe zum EMA (die Spalte _abs_dist haben wir extra dafür angelegt)
-    results = results.sort_values(by="_abs_dist", ascending=True)
-    
-    # 2. Die Hilfsspalte für die Anzeige entfernen (braucht der User nicht sehen)
-    display_df = results.drop(columns=["_abs_dist"])
-    
-    # 3. Style definieren: Minus-Werte in Rot, Plus-Werte in Grün
-    def color_ema_dist(val):
-        color = '#ff4b4b' if val < 0 else '#3dd56d' # Rot bei negativ, Grün bei positiv
-        return f'color: {color}'
+        # Interaktive Tabelle mit Auswahl-Funktion
+        # selection_mode='single-row' erlaubt das Anklicken einer Zeile
+        event = st.dataframe(
+            results.drop(columns=["_abs_dist"]).style.format({"Kurs ($)": "{:.2f}", "RSI": "{:.2f}", "Abstand EMA50 (%)": "{:+.2f}%"}),
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun", # Wichtig: Skript neu laden bei Klick
+            selection_mode="single-row"
+        )
+        
+        # Gewählte Aktie ermitteln
+        selected_ticker = None
+        if event.selection.rows:
+            idx = event.selection.rows[0]
+            selected_ticker = results.iloc[idx]['Ticker']
+    else:
+        st.info("Starte den Scan, um Ergebnisse zu sehen.")
+        selected_ticker = None
 
-    st.dataframe(
-        display_df.style
-        .map(color_ema_dist, subset=['Abstand EMA50 (%)']) # Färbt nur die EMA Spalte
-        .format({"Kurs ($)": "{:.2f}", "RSI": "{:.2f}", "Abstand EMA50 (%)": "{:+.2f}%"}), # Zeigt immer Vorzeichen an (+/-)
-        use_container_width=True,
-        hide_index=True
-    )
-else:
-     st.warning("Keine Aktien gefunden.")
+
+# --- RECHTE SPALTE: CHART ---
+with right_col:
+    st.subheader("2. Detail-Chart")
+    
+    if selected_ticker:
+        st.write(f"### Analyse: {selected_ticker}")
+        
+        # Chart-Daten laden
+        chart_data = yf.download(selected_ticker, period="1y", progress=False)
+        
+        # Indikatoren für den Chart berechnen
+        chart_data['EMA50'] = ta.ema(chart_data['Close'], length=50)
+        
+        # 1. Preis-Chart mit EMA
+        st.line_chart(chart_data[['Close', 'EMA50']], color=["#29b5e8", "#ff4b4b"])
+        
+        # 2. RSI-Chart darunter
+        chart_data['RSI'] = ta.rsi(chart_data['Close'], length=14)
+        st.write("RSI Indikator")
+        st.line_chart(chart_data[['RSI']], color=["#FFA500"])
+        
+        # Kleine Statistik-Boxen
+        latest = chart_data.iloc[-1]
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Kurs", f"{latest['Close']:.2f} $")
+        m2.metric("RSI", f"{latest['RSI']:.2f}")
+        m3.metric("Volumen", f"{latest['Volume'] / 1e6:.1f}M")
+        
+    else:
+        # Platzhalter, wenn nichts ausgewählt ist
+        st.empty()
+        st.markdown(
+            """
+            <div style='text-align: center; padding: 100px; color: #666;'>
+                👈 <b>Wähle links eine Aktie aus</b><br>
+                um den Chart und Details zu sehen.
+            </div>
+            """, unsafe_allow_html=True
+        )
