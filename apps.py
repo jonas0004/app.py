@@ -171,7 +171,13 @@ with right_col:
         # Chart-Daten laden
         chart_data = yf.download(selected_ticker, period="1y", progress=False)
         
-        # Indikatoren für den Chart berechnen
+        # --- REPARATUR: Multi-Index entfernen ---
+        # Das hier behebt den KeyError! Wir entfernen die Ticker-Ebene aus den Spaltennamen.
+        if isinstance(chart_data.columns, pd.MultiIndex):
+            chart_data.columns = chart_data.columns.get_level_values(0)
+        # ---------------------------------------
+
+        # Jetzt können wir ganz normal auf 'Close' zugreifen
         chart_data['EMA50'] = ta.ema(chart_data['Close'], length=50)
         
         # 1. Preis-Chart mit EMA
@@ -179,18 +185,23 @@ with right_col:
         
         # 2. RSI-Chart darunter
         chart_data['RSI'] = ta.rsi(chart_data['Close'], length=14)
+        
         st.write("RSI Indikator")
+        # RSI Chart mit einer Linie für die 30er Marke (Überverkauft)
         st.line_chart(chart_data[['RSI']], color=["#FFA500"])
         
         # Kleine Statistik-Boxen
-        latest = chart_data.iloc[-1]
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Kurs", f"{latest['Close']:.2f} $")
-        m2.metric("RSI", f"{latest['RSI']:.2f}")
-        m3.metric("Volumen", f"{latest['Volume'] / 1e6:.1f}M")
+        if not chart_data.empty:
+            latest = chart_data.iloc[-1]
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Kurs", f"{latest['Close']:.2f} $")
+            m2.metric("RSI", f"{latest['RSI']:.2f}")
+            
+            # Volumen formatieren (in Millionen)
+            vol_str = f"{latest['Volume'] / 1e6:.1f}M" if latest['Volume'] > 1e6 else f"{latest['Volume']:.0f}"
+            m3.metric("Volumen", vol_str)
         
     else:
-        # Platzhalter, wenn nichts ausgewählt ist
         st.empty()
         st.markdown(
             """
