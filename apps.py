@@ -135,43 +135,32 @@ with left_col:
             ema_tol = st.slider("EMA tol (%)", 0.5, 10.0, 2.0)
 
     if st.button("🚀 Scan Starten", use_container_width=True):
-        # Wir speichern das Ergebnis im Session State, damit es beim Klick nicht verschwindet
         tickers = get_sp500_tickers()
         with st.spinner('Scanne...'):
             st.session_state['scan_results'] = run_screener(tickers, use_rsi, rsi_limit, use_ema, ema_tol, use_vol)
 
-    # Ergebnisse anzeigen (falls vorhanden)
-       if 'scan_results' in st.session_state and not st.session_state['scan_results'].empty:
+    # Ergebnisse anzeigen
+    # ACHTUNG: Diese Zeile muss genau 4 Leerzeichen eingerückt sein (bündig mit 'st.subheader' oben)
+    if 'scan_results' in st.session_state and not st.session_state['scan_results'].empty:
         results = st.session_state['scan_results']
         st.success(f"{len(results)} Treffer.")
         
-        # Erst nach absoluter Nähe sortieren
+        # Sortieren nach absoluter Nähe
         results = results.sort_values(by="_abs_dist", ascending=True)
         
-        # Styling Funktion definieren
+        # Styling Funktion
         def color_ema_dist(val):
-            color = '#ff4b4b' if val < 0 else '#3dd56d' # Rot bei Minus, Grün bei Plus
+            color = '#ff4b4b' if val < 0 else '#3dd56d'
             return f'color: {color}'
-
-        # Tabelle anzeigen
+        
+        # Interaktive Tabelle
         event = st.dataframe(
-            results.drop(columns=["_abs_dist"]) # Versteckte Spalte rauswerfen
-                   .style
-                   .map(color_ema_dist, subset=['Abstand EMA50 (%)']) # Farbe anwenden
-                   .format({"Kurs ($)": "{:.2f}", "RSI": "{:.2f}", "Abstand EMA50 (%)": "{:+.2f}%"}), # Formatierung
+            results.drop(columns=["_abs_dist"]).style
+                   .map(color_ema_dist, subset=['Abstand EMA50 (%)'])
+                   .format({"Kurs ($)": "{:.2f}", "RSI": "{:.2f}", "Abstand EMA50 (%)": "{:+.2f}%"}),
             use_container_width=True,
             hide_index=True,
             on_select="rerun",
-            selection_mode="single-row"
-        )
-
-        # Interaktive Tabelle mit Auswahl-Funktion
-        # selection_mode='single-row' erlaubt das Anklicken einer Zeile
-        event = st.dataframe(
-            results.drop(columns=["_abs_dist"]).style.format({"Kurs ($)": "{:.2f}", "RSI": "{:.2f}", "Abstand EMA50 (%)": "{:+.2f}%"}),
-            use_container_width=True,
-            hide_index=True,
-            on_select="rerun", # Wichtig: Skript neu laden bei Klick
             selection_mode="single-row"
         )
         
@@ -183,7 +172,6 @@ with left_col:
     else:
         st.info("Starte den Scan, um Ergebnisse zu sehen.")
         selected_ticker = None
-
 
 # --- RECHTE SPALTE: CHART ---
 with right_col:
