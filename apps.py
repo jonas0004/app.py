@@ -33,7 +33,7 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
         try:
             if i % 10 == 0:
                 progress_bar.progress((i + 1) / total_tickers)
-                status_text.text(f"Analysiere {i+1}/{total_tickers}: {t}...")
+                status_text.text(f"Progress {i+1}/{total_tickers}: {t}...")
             
         
             df = yf.download(t, period="6mo", progress=False, threads=False)
@@ -130,7 +130,7 @@ with left_col:
 
     if st.button("🚀 start scanning", use_container_width=True):
         tickers = get_sp500_tickers()
-        with st.spinner('Scanne...'):
+        with st.spinner('Scanning...'):
             st.session_state['scan_results'] = run_screener(tickers, use_rsi, rsi_limit, use_ema, ema_tol, use_vol)
 
     if 'scan_results' in st.session_state and not st.session_state['scan_results'].empty:
@@ -185,13 +185,13 @@ with right_col:
         # 2. RSI-chart
         chart_data['RSI'] = ta.rsi(chart_data['Close'], length=14)
         
-        st.write("RSI Indikator")
+        st.write("RSI Indicator")
         st.line_chart(chart_data[['RSI']], color=["#FFA500"])
         
         if not chart_data.empty:
             latest = chart_data.iloc[-1]
             m1, m2, m3 = st.columns(3)
-            m1.metric("Kurs", f"{latest['Close']:.2f} $")
+            m1.metric("Price", f"{latest['Close']:.2f} $")
             m2.metric("RSI", f"{latest['RSI']:.2f}")
             
             vol_str = f"{latest['Volume'] / 1e6:.1f}M" if latest['Volume'] > 1e6 else f"{latest['Volume']:.0f}"
