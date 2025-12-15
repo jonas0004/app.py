@@ -4,14 +4,13 @@ import yfinance as yf
 import pandas_ta as ta
 import requests
 
-# 1. Seiten-Konfiguration
 st.set_page_config(
     page_title="S&P 500 Custom Screener",
     page_icon="🎛️",
     layout="wide"
 )
 
-# 2. Daten laden (GitHub-Quelle)
+# loading data
 @st.cache_data
 def get_sp500_tickers():
     try:
@@ -22,7 +21,7 @@ def get_sp500_tickers():
         st.error(f"Fehler beim Laden der Ticker-Liste: {e}")
         return []
 
-# 3. Der Screener mit flexiblen Filtern
+#  screener
 def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
     candidates = []
     
@@ -36,26 +35,24 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
                 progress_bar.progress((i + 1) / total_tickers)
                 status_text.text(f"Analysiere {i+1}/{total_tickers}: {t}...")
             
-            # Daten laden
+        
             df = yf.download(t, period="6mo", progress=False, threads=False)
             if len(df) < 50: continue
             
-            # Handling MultiIndex (wichtig für Chart & Berechnung!)
+         
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
             
             close = df['Close']
             volume = df['Volume']
 
-            # --- PRÜFUNGEN ---
             match_rsi = True
             match_ema = True
             match_vol = True
             
-            # Werte initialisieren
             current_rsi = 0.0
-            raw_dist_pct = 0.0  # Das ist der Wert mit +/- (für Anzeige)
-            abs_dist_pct = 0.0  # Das ist der positive Wert (für Filter)
+            raw_dist_pct = 0.0  
+            abs_dist_pct = 0.0 
             
             final_close = close.iloc[-1]
 
@@ -73,11 +70,10 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
             if ema_series is not None:
                 current_ema = ema_series.iloc[-1]
                 
-                # Berechnung: (Kurs - EMA) / EMA * 100
-                # Ergibt z.B. -1.5 (drunter) oder +0.5 (drüber)
+               
                 raw_dist_pct = (final_close - current_ema) / current_ema * 100
                 
-                # Für den Filter ist uns egal, ob drüber oder drunter -> Absolutwert
+         
                 abs_dist_pct = abs(raw_dist_pct)
                 
                 if use_ema and abs_dist_pct > ema_tol:
@@ -92,14 +88,14 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
                 if vol_recent <= vol_prev:
                     match_vol = False
             
-            # Wenn ALLE aktiven Filter passen -> hinzufügen
+            # adding when all criteria is fulfilled
             if match_rsi and match_ema and match_vol:
                 candidates.append({
                     "Ticker": t,
                     "Kurs ($)": round(final_close, 2),
                     "RSI": round(current_rsi, 2),
-                    "Abstand EMA50 (%)": raw_dist_pct, # Hier den +/- Wert speichern!
-                    "_abs_dist": abs_dist_pct # Versteckter Wert für Sortierung
+                    "Abstand EMA50 (%)": raw_dist_pct, 
+                    "_abs_dist": abs_dist_pct 
                 })
 
         except Exception:
@@ -110,20 +106,18 @@ def run_screener(tickers, use_rsi, rsi_thresh, use_ema, ema_tol, use_vol):
     return pd.DataFrame(candidates)
 
 
-# --- FRONTEND: ZWEIGETEILTES LAYOUT ---
+# FRONTEND
 
 st.set_page_config(layout="wide", page_title="S&P 500 Screener & Chart", page_icon="📈")
 
 st.title("🎯 S&P 500 Analyse-Cockpit")
 
-# Layout: Zwei Spalten (Links: Screener / Rechts: Chart)
 left_col, right_col = st.columns([1, 1], gap="large")
 
-# --- LINKE SPALTE: SCREENER ---
+# left side: SCREENER 
 with left_col:
     st.subheader("1. Aktiensuche")
     
-    # Filter im Expander (Platzsparend)
     with st.expander("⚙️ Filter Einstellungen", expanded=False):
         f_col1, f_col2 = st.columns(2)
         with f_col1:
@@ -139,21 +133,18 @@ with left_col:
         with st.spinner('Scanne...'):
             st.session_state['scan_results'] = run_screener(tickers, use_rsi, rsi_limit, use_ema, ema_tol, use_vol)
 
-    # Ergebnisse anzeigen
-    # ACHTUNG: Diese Zeile muss genau 4 Leerzeichen eingerückt sein (bündig mit 'st.subheader' oben)
     if 'scan_results' in st.session_state and not st.session_state['scan_results'].empty:
         results = st.session_state['scan_results']
         st.success(f"{len(results)} Treffer.")
         
-        # Sortieren nach absoluter Nähe
         results = results.sort_values(by="_abs_dist", ascending=True)
         
-        # Styling Funktion
+
         def color_ema_dist(val):
             color = '#ff4b4b' if val < 0 else '#3dd56d'
             return f'color: {color}'
         
-        # Interaktive Tabelle
+   
         event = st.dataframe(
             results.drop(columns=["_abs_dist"]).style
                    .map(color_ema_dist, subset=['Abstand EMA50 (%)'])
@@ -164,7 +155,6 @@ with left_col:
             selection_mode="single-row"
         )
         
-        # Gewählte Aktie ermitteln
         selected_ticker = None
         if event.selection.rows:
             idx = event.selection.rows[0]
@@ -173,43 +163,37 @@ with left_col:
         st.info("Starte den Scan, um Ergebnisse zu sehen.")
         selected_ticker = None
 
-# --- RECHTE SPALTE: CHART ---
+# right side: charts
 with right_col:
     st.subheader("2. Detail-Chart")
     
     if selected_ticker:
         st.write(f"### Analyse: {selected_ticker}")
         
-        # Chart-Daten laden
+        
         chart_data = yf.download(selected_ticker, period="1y", progress=False)
         
-        # --- REPARATUR: Multi-Index entfernen ---
-        # Das hier behebt den KeyError! Wir entfernen die Ticker-Ebene aus den Spaltennamen.
+    
         if isinstance(chart_data.columns, pd.MultiIndex):
             chart_data.columns = chart_data.columns.get_level_values(0)
-        # ---------------------------------------
-
-        # Jetzt können wir ganz normal auf 'Close' zugreifen
+        
         chart_data['EMA50'] = ta.ema(chart_data['Close'], length=50)
         
-        # 1. Preis-Chart mit EMA
+        # chart with ema
         st.line_chart(chart_data[['Close', 'EMA50']], color=["#29b5e8", "#ff4b4b"])
         
-        # 2. RSI-Chart darunter
+        # 2. RSI-chart
         chart_data['RSI'] = ta.rsi(chart_data['Close'], length=14)
         
         st.write("RSI Indikator")
-        # RSI Chart mit einer Linie für die 30er Marke (Überverkauft)
         st.line_chart(chart_data[['RSI']], color=["#FFA500"])
         
-        # Kleine Statistik-Boxen
         if not chart_data.empty:
             latest = chart_data.iloc[-1]
             m1, m2, m3 = st.columns(3)
             m1.metric("Kurs", f"{latest['Close']:.2f} $")
             m2.metric("RSI", f"{latest['RSI']:.2f}")
             
-            # Volumen formatieren (in Millionen)
             vol_str = f"{latest['Volume'] / 1e6:.1f}M" if latest['Volume'] > 1e6 else f"{latest['Volume']:.0f}"
             m3.metric("Volumen", vol_str)
         
@@ -218,8 +202,8 @@ with right_col:
         st.markdown(
             """
             <div style='text-align: center; padding: 100px; color: #666;'>
-                👈 <b>Wähle links eine Aktie aus</b><br>
-                um den Chart und Details zu sehen.
+                👈 <b>Choose a stock</b><br>
+                to see the chart and details
             </div>
             """, unsafe_allow_html=True
         )
