@@ -116,26 +116,26 @@ left_col, right_col = st.columns([1, 1], gap="large")
 
 # left side: SCREENER 
 with left_col:
-    st.subheader("1. Aktiensuche")
+    st.subheader("1. Stock screening")
     
-    with st.expander("⚙️ Filter Einstellungen", expanded=False):
+    with st.expander("⚙️ Filters", expanded=False):
         f_col1, f_col2 = st.columns(2)
         with f_col1:
             use_rsi = st.checkbox("RSI Filter", value=True)
             rsi_limit = st.slider("Max RSI", 10, 80, 30)
-            use_vol = st.checkbox("Volumen ↑", value=True)
+            use_vol = st.checkbox("Volume ↑", value=True)
         with f_col2:
             use_ema = st.checkbox("EMA Filter", value=True)
             ema_tol = st.slider("EMA tol (%)", 0.5, 10.0, 2.0)
 
-    if st.button("🚀 Scan Starten", use_container_width=True):
+    if st.button("🚀 start scanning", use_container_width=True):
         tickers = get_sp500_tickers()
         with st.spinner('Scanne...'):
             st.session_state['scan_results'] = run_screener(tickers, use_rsi, rsi_limit, use_ema, ema_tol, use_vol)
 
     if 'scan_results' in st.session_state and not st.session_state['scan_results'].empty:
         results = st.session_state['scan_results']
-        st.success(f"{len(results)} Treffer.")
+        st.success(f"{len(results)} Results.")
         
         results = results.sort_values(by="_abs_dist", ascending=True)
         
@@ -147,8 +147,8 @@ with left_col:
    
         event = st.dataframe(
             results.drop(columns=["_abs_dist"]).style
-                   .map(color_ema_dist, subset=['Abstand EMA50 (%)'])
-                   .format({"Kurs ($)": "{:.2f}", "RSI": "{:.2f}", "Abstand EMA50 (%)": "{:+.2f}%"}),
+                   .map(color_ema_dist, subset=['Distance EMA50 (%)'])
+                   .format({"Kurs ($)": "{:.2f}", "RSI": "{:.2f}", "Distance EMA50 (%)": "{:+.2f}%"}),
             use_container_width=True,
             hide_index=True,
             on_select="rerun",
@@ -160,12 +160,12 @@ with left_col:
             idx = event.selection.rows[0]
             selected_ticker = results.iloc[idx]['Ticker']
     else:
-        st.info("Starte den Scan, um Ergebnisse zu sehen.")
+        st.info("start the scan to see results")
         selected_ticker = None
 
 # right side: charts
 with right_col:
-    st.subheader("2. Detail-Chart")
+    st.subheader("2. Details: Chart and RSI")
     
     if selected_ticker:
         st.write(f"### Analyse: {selected_ticker}")
